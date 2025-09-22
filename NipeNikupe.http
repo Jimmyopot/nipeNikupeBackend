@@ -1,0 +1,6 @@
+@NipeNikupe_HostAddress = http://localhost:5043
+
+GET {{NipeNikupe_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
