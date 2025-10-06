@@ -57,6 +57,32 @@ namespace NipeNikupe.Controllers
             return Ok(new { message = "Registration successful." });
         }
 
+        [HttpPost("CheckUserUnique")]
+        public IActionResult CheckUserUnique([FromBody] CheckUserUniqueDTO request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Email) && string.IsNullOrWhiteSpace(request.PhoneNumber))
+                return BadRequest("Email or phone number is required.");
+
+            var emailExists = !string.IsNullOrWhiteSpace(request.Email) && _context.SignUps.Any(u => u.Email == request.Email);
+            var phoneExists = !string.IsNullOrWhiteSpace(request.PhoneNumber) && _context.SignUps.Any(u => u.PhoneNumber == request.PhoneNumber);
+
+            if (emailExists || phoneExists)
+            {
+                var errors = new List<string>();
+                if (emailExists) errors.Add("Email already exists.");
+                if (phoneExists) errors.Add("Phone number already exists.");
+
+                return Conflict(new
+                {
+                    message = string.Join(" ", errors),
+                    emailConflict = emailExists,
+                    phoneConflict = phoneExists
+                });
+            }
+
+            return Ok(new { message = "User is unique. No conflicts found." });
+        }
+
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginDTO request)
         {
