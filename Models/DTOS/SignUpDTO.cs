@@ -12,5 +12,6 @@
         public required List<string> Skills { get; set; }
         public DateTime AvailableDate { get; set; }
         public TimeSpan AvailableTime { get; set; }
+        public DateTime? LastLoginAt { get; set; }
     }
 }

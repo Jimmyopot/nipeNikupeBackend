@@ -1,7 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NipeNikupe.Data;
 using NipeNikupe.Models;
+using NipeNikupe.Models.DTOS;
 
 namespace NipeNikupe.Controllers
 {
@@ -12,42 +14,88 @@ namespace NipeNikupe.Controllers
 
     {
         private readonly AppDbContext _context;
+        private readonly PasswordHasher<SignUp> _passwordHasher = new();
 
         public UserControllers(AppDbContext context) { 
             _context = context;
         }
 
-        [HttpGet("GetUsers")]
-        public async Task<IActionResult> GetUsers()
+        [HttpGet("GetAllUsers")]
+        public async Task<IActionResult> GetAllUsers()
         {
-            var users = await _context.users.Select(u => new {
-                u.Id,
-                u.Name,
-                u.Email
-            }).ToListAsync();
+            var users = await _context.SignUps
+                .Select(u => new
+                {
+                    u.Id,
+                    u.FullName,
+                    u.Email,
+                    u.PhoneNumber,
+                    u.Country,
+                    u.CityOrTown,
+                    u.LocalityOrArea,
+                    u.Skills,
+                    u.AvailableDate,
+                    u.AvailableTime,
+                    isFirstTimeLoggingIn = u.LastLoginAt == null
+                })
+                .ToListAsync();
 
             return Ok(users);
         }
 
-        [HttpPost("CreateUser")]
-        public async Task<IActionResult> CreateUser([FromBody] User user)
+        [HttpPut("UpdateProfile/{id}")]
+        public async Task<IActionResult> UpdateProfile(Guid id, [FromBody] SignUpDTO request)
         {
-            Console.WriteLine($"📥 Incoming request: {System.Text.Json.JsonSerializer.Serialize(user)}");
-            if (user == null || string.IsNullOrEmpty(user.Name) || string.IsNullOrEmpty(user.Email) || string.IsNullOrEmpty(user.Password))
+            var user = await _context.SignUps.FindAsync(id);
+            if (user == null)
+                return NotFound(new { message = "User not found." });
+
+            // Optionally, check for email/phone conflicts with other users
+            bool emailConflict = _context.SignUps.Any(u => u.Email == request.Email && u.Id != id);
+            bool phoneConflict = _context.SignUps.Any(u => u.PhoneNumber == request.PhoneNumber && u.Id != id);
+            if (emailConflict || phoneConflict)
             {
-                return BadRequest("Invalid user data.");
+                var errors = new List<string>();
+                if (emailConflict) errors.Add("Email already exists.");
+                if (phoneConflict) errors.Add("Phone number already exists.");
+                return Conflict(new { message = string.Join(" ", errors) });
             }
-            _context.users.Add(user);
+
+            user.FullName = request.FullName;
+            user.Email = request.Email;
+            user.PhoneNumber = request.PhoneNumber;
+            user.Country = request.Country;
+            user.CityOrTown = request.CityOrTown;
+            user.LocalityOrArea = request.LocalityOrArea;
+            user.Skills = request.Skills ?? new List<string>();
+            user.AvailableDate = request.AvailableDate;
+            user.AvailableTime = request.AvailableTime;
+
+            // Only update password if a new one is provided
+            if (!string.IsNullOrWhiteSpace(request.Password))
+                user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
+
+            _context.SignUps.Update(user);
             await _context.SaveChangesAsync();
-            //return CreatedAtAction(nameof(GetUsers), new { id = user.Id }, new { user.Id, user.Name, user.Email });
-            return Ok(user);
+
+            return Ok(new
+            {
+                message = "Profile updated successfully.",
+                user = new
+                {
+                    user.Id,
+                    user.FullName,
+                    user.Email,
+                    user.PhoneNumber,
+                    user.Country,
+                    user.CityOrTown,
+                    user.LocalityOrArea,
+                    user.Skills,
+                    user.AvailableDate,
+                    user.AvailableTime
+                }
+            });
         }
 
-        [HttpGet("Ping")]
-        public IActionResult Ping()
-        {
-            Console.WriteLine("✅ Ping endpoint hit!");
-            return Ok("Backend is runningtyyyt 🚀");
-        }
     }
 }

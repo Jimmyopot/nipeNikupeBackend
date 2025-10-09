@@ -93,13 +93,35 @@ namespace NipeNikupe.Controllers
             if (user == null)
                 return Unauthorized("Invalid credentials.");
 
+            // Update LastLoginAt on successful login
+            user.LastLoginAt = DateTime.UtcNow;
+            _context.SignUps.Update(user);
+            await _context.SaveChangesAsync();
+
             var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
             if (result != PasswordVerificationResult.Success)
                 return Unauthorized("Invalid credentials.");
 
             var token = _jwtTokenService.GenerateToken(user);
 
-            return Ok(new { token });
+            return Ok(new 
+            { 
+                token,
+                user = new 
+                {
+                    user.Id,
+                    user.FullName,
+                    user.Email,
+                    user.PhoneNumber,
+                    user.Country,
+                    user.CityOrTown,
+                    user.LocalityOrArea,
+                    user.Skills,
+                    user.AvailableDate,
+                    user.AvailableTime,
+                    isFirstTimeLoggingIn = user.LastLoginAt == null
+                }
+            });
         }
     }
 }

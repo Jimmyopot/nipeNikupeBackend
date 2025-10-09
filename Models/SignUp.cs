@@ -13,5 +13,6 @@
         public List<string> Skills { get; set; } = new();
         public DateTime AvailableDate { get; set; }
         public TimeSpan AvailableTime { get; set; }
+        public DateTime? LastLoginAt { get; set; }
     }
 }
