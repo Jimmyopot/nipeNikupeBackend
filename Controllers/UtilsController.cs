@@ -125,5 +125,73 @@ namespace NipeNikupe.Controllers
 
             return Ok(grouped);
         }
+
+        // -------------------------
+        // New endpoint requested:
+        // GET /api/skills/search?skill=plumbing&county=Nairobi
+        // GET SearchUsersBySkillAndCounty?skill=plumbing&county=Nairobi
+        // - skill (required)
+        // - county (optional)
+        // Returns matching users (profile & contact) who offer the skill, optionally filtered by county.
+        // -------------------------
+
+        [HttpGet("SearchUsersBySkillAndCounty")]
+        public async Task<IActionResult> SearchUsersBySkillAndCounty([FromQuery] string skill, [FromQuery] string? county = null)
+        {
+            if (string.IsNullOrWhiteSpace(skill))
+                return BadRequest("Query parameter 'skill' is required.");
+
+            var search = skill.Trim().ToLowerInvariant();
+            string? normalizedCounty = string.IsNullOrWhiteSpace(county) ? null : county.Trim().ToLowerInvariant();
+
+            // Load users. If you expect many users, replace with a paged query or normalized UserSkill join table.
+            var users = await _context.SignUps.ToListAsync();
+
+            var results = new List<object>();
+
+            foreach (var user in users)
+            {
+                // Ensure user has skills
+                if (user.Skills == null || user.Skills.Count == 0)
+                    continue;
+
+                // Find matching skills for this user (case-insensitive, partial match)
+                var matchedSkill = user.Skills
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Select(s => new { Raw = s, Lower = s.Trim().ToLowerInvariant() })
+                    .FirstOrDefault(s => s.Lower.Contains(search));
+
+                if (matchedSkill == null)
+                    continue;
+
+                // If county filter provided, try to match against user's CityOrTown or LocalityOrArea (sign-up model does not have a 'County' field)
+                if (normalizedCounty != null)
+                {
+                    var city = user.CityOrTown?.Trim().ToLowerInvariant();
+                    var locality = user.LocalityOrArea?.Trim().ToLowerInvariant();
+
+                    // Match if county equals or is contained in either city or locality (helps with "Nairobi" and "Westlands" cases)
+                    var countyMatches =
+                        (!string.IsNullOrWhiteSpace(city) && city.Contains(normalizedCounty)) ||
+                        (!string.IsNullOrWhiteSpace(locality) && locality.Contains(normalizedCounty));
+
+                    if (!countyMatches)
+                        continue;
+                }
+
+                // Build result item
+                results.Add(new
+                {
+                    userId = user.Id.ToString(),
+                    fullName = user.FullName,
+                    skill = matchedSkill.Raw,
+                    county = user.CityOrTown ?? string.Empty,
+                    country = user.Country ?? string.Empty,
+                    contact = user.Email
+                });
+            }
+
+            return Ok(results);
+        }
     }
-}
+        }
