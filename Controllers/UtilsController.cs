@@ -191,6 +191,32 @@ namespace NipeNikupe.Controllers
                 });
             }
 
+            // ********** Log this search for analytics **********
+            try
+            {
+                var userIdClaim = User?.FindFirst("userId")?.Value; // may be null for anonymous
+                var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+                var ua = Request.Headers["User-Agent"].FirstOrDefault();
+
+                var log = new NipeNikupe.Models.SkillSearchLog
+                {
+                    Skill = skill.Trim(),
+                    County = county,
+                    UserId = userIdClaim,
+                    IpAddress = ip,
+                    UserAgent = ua,
+                    ResultsCount = results.Count,
+                    SearchTimeUtc = DateTime.UtcNow
+                };
+                _context.SkillSearchLogs.Add(log);
+                // await to ensure log persisted; consider fire-and-forget in high-throughput scenarios
+                await _context.SaveChangesAsync();
+            }
+            catch
+            {
+                // logging must not break the API — swallow errors or write to fallback logger
+            }
+
             return Ok(results);
         }
     }

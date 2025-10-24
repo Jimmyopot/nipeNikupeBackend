@@ -13,6 +13,7 @@ namespace NipeNikupe.Data
         public virtual DbSet<SignUp> SignUps { get; set; }
         public virtual DbSet<County> Counties { get; set; }
         public virtual DbSet<Skill> Skills { get; set; }
+        public virtual DbSet<SkillSearchLog> SkillSearchLogs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -21,6 +22,7 @@ namespace NipeNikupe.Data
             builder.Entity<SignUp>().ToTable("signUps");
             builder.Entity<County>().ToTable("counties");
             builder.Entity<Skill>().ToTable("skills");
+            builder.Entity<SkillSearchLog>().ToTable("skill_search_logs");
 
             builder.Entity<County>().HasData(
                new County { Id = 1, Name = "Mombasa" },

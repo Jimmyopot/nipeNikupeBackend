@@ -5,6 +5,7 @@ using NipeNikupe.Models.DTOS;
 using NipeNikupe.Data;
 using System.Threading.Tasks;
 using NipeNikupe.Services;
+using Microsoft.AspNetCore.Authorization;
 
 namespace NipeNikupe.Controllers
 {
@@ -106,7 +107,7 @@ namespace NipeNikupe.Controllers
 
             return Ok(new 
             { 
-                token,
+                //token,
                 user = new 
                 {
                     user.Id,
@@ -119,9 +120,17 @@ namespace NipeNikupe.Controllers
                     user.Skills,
                     user.AvailableDate,
                     user.AvailableTime,
-                    isFirstTimeLoggingIn = user.LastLoginAt == null
+                    isFirstTimeLoggingIn = user.LastLoginAt == null,
+                    token
                 }
             });
+        }
+
+        [HttpGet("CheckAuthentication")]
+        [AllowAnonymous]
+        public ActionResult<bool> CheckAuthentication()
+        {
+            return User.Identity.IsAuthenticated;
         }
     }
 }
