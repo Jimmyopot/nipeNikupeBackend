@@ -1,8 +1,9 @@
-using Microsoft.EntityFrameworkCore;
-using NipeNikupe.Data;
-using NipeNikupe.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using NipeNikupe.Data;
+using NipeNikupe.Hubs;
+using NipeNikupe.Services;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,12 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddControllers();
+
+// SignalR
+builder.Services.AddSignalR();
+// Provide SignalR a user id provider that reads "userId" claim
+builder.Services.AddSingleton<Microsoft.AspNetCore.SignalR.IUserIdProvider, NipeNikupe.Services.NameUserIdProvider>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowViteFrontend", policy =>
@@ -47,6 +54,23 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtSettings["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]))
     };
+
+    // Allow the token to be passed in the query string for SignalR WebSocket negotiate (optional)
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"].FirstOrDefault();
+            // If the request is for our SignalR hub, read the token from the query string
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) &&
+                (path.StartsWithSegments("/hubs/chat")))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 var app = builder.Build();
@@ -67,6 +91,9 @@ app.UseAuthorization();
 app.UseHttpsRedirection();
 
 app.UseAuthorization();
+
+// Map SignalR hubs
+app.MapHub<ChatHub>("/hubs/chat");
 
 app.MapControllers();
 
