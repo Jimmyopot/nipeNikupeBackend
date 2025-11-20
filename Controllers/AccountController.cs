@@ -137,14 +137,15 @@
 
 
 
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using NipeNikupe.Data;
 using NipeNikupe.Models;
 using NipeNikupe.Models.DTOS;
-using NipeNikupe.Data;
-using System.Threading.Tasks;
 using NipeNikupe.Services;
-using Microsoft.AspNetCore.Authorization;
+using System.Threading.Tasks;
 
 namespace NipeNikupe.Controllers
 {
@@ -221,33 +222,96 @@ namespace NipeNikupe.Controllers
             return Ok(new { message = "User is unique. No conflicts found." });
         }
 
+        //[HttpPost("Login")]
+        //public async Task<IActionResult> Login([FromBody] LoginDTO request)
+        //{
+        //    if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        //        return BadRequest("Email and password are required.");
+
+        //    var user = await Task.Run(() => _context.SignUps.FirstOrDefault(u => u.Email == request.Email));
+        //    if (user == null)
+        //        return Unauthorized("Invalid credentials.");
+
+        //    var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+        //    if (result != PasswordVerificationResult.Success)
+        //        return Unauthorized("Invalid credentials.");
+
+        //    // Capture whether this is the first login before updating LastLoginAt
+        //    var wasFirstTime = user.LastLoginAt == null;
+
+        //    // Update LastLoginAt on successful login
+        //    user.LastLoginAt = DateTime.UtcNow;
+        //    _context.SignUps.Update(user);
+        //    await _context.SaveChangesAsync();
+
+        //    var token = _jwtTokenService.GenerateToken(user);
+
+        //    // Return token at top-level (and user info separately) — frontend typically expects response.token
+        //    return Ok(new
+        //    {
+        //        token,
+        //        user = new
+        //        {
+        //            user.Id,
+        //            user.FullName,
+        //            user.Email,
+        //            user.PhoneNumber,
+        //            user.Country,
+        //            user.CityOrTown,
+        //            user.LocalityOrArea,
+        //            user.Skills,
+        //            user.AvailableDate,
+        //            user.AvailableTime,
+        //            isFirstTimeLoggingIn = wasFirstTime
+        //        }
+        //    });
+        //}
+
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginDTO request)
         {
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
-                return BadRequest("Email and password are required.");
+                return BadRequest(new { success = false, message = "Email and password are required." });
 
-            var user = await Task.Run(() => _context.SignUps.FirstOrDefault(u => u.Email == request.Email));
+            var user = await _context.SignUps.FirstOrDefaultAsync(u => u.Email == request.Email);
+
+            // Don't reveal if email exists - return same message for both cases
             if (user == null)
-                return Unauthorized("Invalid credentials.");
+                return Unauthorized(new { success = false, message = "Invalid email or password" });
 
             var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
-            if (result != PasswordVerificationResult.Success)
-                return Unauthorized("Invalid credentials.");
 
-            // Capture whether this is the first login before updating LastLoginAt
+            // Same unified message for wrong password
+            if (result != PasswordVerificationResult.Success)
+                return Unauthorized(new { success = false, message = "Invalid email or password" });
+
+            // Capture first-time login status
             var wasFirstTime = user.LastLoginAt == null;
 
-            // Update LastLoginAt on successful login
-            user.LastLoginAt = DateTime.UtcNow;
-            _context.SignUps.Update(user);
-            await _context.SaveChangesAsync();
-
+            // Generate token BEFORE database write for faster response
             var token = _jwtTokenService.GenerateToken(user);
 
-            // Return token at top-level (and user info separately) — frontend typically expects response.token
+            // Update LastLoginAt asynchronously (fire-and-forget or background task)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    user.LastLoginAt = DateTime.UtcNow;
+                    _context.SignUps.Update(user);
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Log error but don't fail the login
+                    // _logger.LogError(ex, "Failed to update LastLoginAt for user {UserId}", user.Id);
+                }
+            });
+
+            // Return immediately with token and user data
             return Ok(new
             {
+                success = true,
+                message = "Login successful",
                 token,
                 user = new
                 {
