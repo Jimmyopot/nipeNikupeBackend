@@ -1,11 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using NipeNikupe.Data;
 using NipeNikupe.Models;
 using NipeNikupe.Models.DTOS;
-using NipeNikupe.Data;
-using System.Threading.Tasks;
 using NipeNikupe.Services;
-using Microsoft.AspNetCore.Authorization;
+using System.Threading.Tasks;
 
 namespace NipeNikupe.Controllers
 {
@@ -88,27 +89,35 @@ namespace NipeNikupe.Controllers
         public async Task<IActionResult> Login([FromBody] LoginDTO request)
         {
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
-                return BadRequest("Email and password are required.");
+                return BadRequest(new { success = false, message = "Email and password are required." });
 
-            var user = await Task.Run(() => _context.SignUps.FirstOrDefault(u => u.Email == request.Email));
+            var user = await _context.SignUps.FirstOrDefaultAsync(u => u.Email == request.Email);
+
             if (user == null)
-                return Unauthorized("Invalid credentials.");
+                return Unauthorized(new { success = false, message = "Invalid credentials." });
+
+            // Verify password BEFORE updating database
+            var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+
+            if (result != PasswordVerificationResult.Success)
+                return Unauthorized(new { success = false, message = "Invalid credentials." });
+
+            // Check if first time login BEFORE updating LastLoginAt
+            var isFirstTimeLoggingIn = user.LastLoginAt == null;
 
             // Update LastLoginAt on successful login
             user.LastLoginAt = DateTime.UtcNow;
             _context.SignUps.Update(user);
             await _context.SaveChangesAsync();
 
-            var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
-            if (result != PasswordVerificationResult.Success)
-                return Unauthorized("Invalid credentials.");
-
             var token = _jwtTokenService.GenerateToken(user);
 
-            return Ok(new 
-            { 
-                //token,
-                user = new 
+            return Ok(new
+            {
+                success = true,
+                message = "Successfully logged in",
+                token,
+                user = new
                 {
                     user.Id,
                     user.FullName,
@@ -120,7 +129,7 @@ namespace NipeNikupe.Controllers
                     user.Skills,
                     user.AvailableDate,
                     user.AvailableTime,
-                    isFirstTimeLoggingIn = user.LastLoginAt == null,
+                    isFirstTimeLoggingIn,
                     token
                 }
             });
