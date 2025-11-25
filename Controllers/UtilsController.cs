@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using NipeNikupe.Data;
 using System.Globalization;
+using System.Security.Claims;
 
 namespace NipeNikupe.Controllers
 {
@@ -124,6 +125,182 @@ namespace NipeNikupe.Controllers
                 );
 
             return Ok(grouped);
+        }
+
+        // -------------------------
+        // New endpoint requested:
+        // GET /api/utils/GetSimilarUsers?userId={guid}&county=Nairobi
+        // - userId (optional) - if not provided will attempt to read from claims
+        // - county (optional)
+        // Returns logged-in user details and exactly 3 similar users (or fallback random users)
+        // -------------------------
+        [HttpGet("GetSimilarUsers")]
+        public async Task<IActionResult> GetSimilarUsers([FromQuery] Guid? userId = null, [FromQuery] string? county = null)
+        {
+            // Resolve user id: query -> claims
+            string? claimUserId = null;
+            if (userId == null)
+            {
+                claimUserId = User?.FindFirst("userId")?.Value ?? User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (!string.IsNullOrWhiteSpace(claimUserId) && Guid.TryParse(claimUserId, out var parsed))
+                    userId = parsed;
+            }
+
+            if (userId == null || userId == Guid.Empty)
+                return BadRequest(new { message = "User id is required either via query or authenticated claim 'userId'." });
+
+            // Load the logged-in user (only required fields)
+            var currentUser = await _context.SignUps
+                .Where(u => u.Id == userId.Value)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.FullName,
+                    u.Email,
+                    u.Skills,
+                    u.CityOrTown,
+                    u.LocalityOrArea,
+                    u.Country
+                })
+                .FirstOrDefaultAsync();
+
+            if (currentUser == null)
+                return NotFound(new { message = "User not found." });
+
+            // Normalize user's skills for case-insensitive matching
+            var userSkills = (currentUser.Skills ?? new List<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim().ToLowerInvariant())
+                .Distinct()
+                .ToList();
+
+            string? normalizedCounty = string.IsNullOrWhiteSpace(county) ? null : county.Trim().ToLowerInvariant();
+
+            // Load other users with minimal fields to perform in-memory matching.
+            // If dataset grows, replace with normalized join table / server-side JSON queries.
+            var others = await _context.SignUps
+                .Where(u => u.Id != currentUser.Id)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.FullName,
+                    u.Email,
+                    u.Skills,
+                    u.CityOrTown,
+                    u.LocalityOrArea,
+                    u.Country
+                })
+                .ToListAsync();
+
+            // Helper to check county match if provided
+            bool CountyMatches(dynamic u)
+            {
+                if (normalizedCounty == null) return true;
+                var city = (u.CityOrTown as string)?.Trim().ToLowerInvariant();
+                var locality = (u.LocalityOrArea as string)?.Trim().ToLowerInvariant();
+                return (!string.IsNullOrWhiteSpace(city) && city.Contains(normalizedCounty))
+                    || (!string.IsNullOrWhiteSpace(locality) && locality.Contains(normalizedCounty));
+            }
+
+            // Find users that share at least one skill
+            var matched = new List<dynamic>();
+            if (userSkills.Count > 0)
+            {
+                foreach (var u in others)
+                {
+                    if (!CountyMatches(u))
+                        continue;
+
+                    var candidateSkills = (u.Skills ?? new List<string>())
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Select(s => new { Raw = s, Lower = s.Trim().ToLowerInvariant() })
+                        .ToList();
+
+                    var overlap = candidateSkills.FirstOrDefault(cs => userSkills.Contains(cs.Lower));
+                    if (overlap != null)
+                    {
+                        matched.Add(new
+                        {
+                            userId = u.Id.ToString(),
+                            fullName = u.FullName,
+                            email = u.Email,
+                            skill = overlap.Raw,
+                            county = u.CityOrTown ?? string.Empty,
+                            country = u.Country ?? string.Empty
+                        });
+                    }
+                }
+            }
+
+            // If no matched users, fallback to 3 random users (still respecting county filter if provided)
+            IEnumerable<dynamic> selection;
+            if (matched.Count > 0)
+            {
+                selection = matched
+                    .OrderBy(_ => Guid.NewGuid())
+                    .Take(3)
+                    .ToList();
+            }
+            else
+            {
+                var fallback = others
+                    .Where(u => CountyMatches(u))
+                    .Select(u => new
+                    {
+                        userId = u.Id.ToString(),
+                        fullName = u.FullName,
+                        email = u.Email,
+                        // best-effort: include first skill if present
+                        skill = (u.Skills != null && u.Skills.Count > 0) ? u.Skills.First() : string.Empty,
+                        county = u.CityOrTown ?? string.Empty,
+                        country = u.Country ?? string.Empty
+                    })
+                    .OrderBy(_ => Guid.NewGuid())
+                    .Take(3)
+                    .ToList();
+
+                selection = fallback;
+            }
+
+            // Build the response user object
+            var responseUser = new
+            {
+                userId = currentUser.Id.ToString(),
+                fullName = currentUser.FullName,
+                email = currentUser.Email,
+                skills = currentUser.Skills ?? new List<string>(),
+                county = currentUser.CityOrTown ?? string.Empty,
+                country = currentUser.Country ?? string.Empty
+            };
+
+            // Log this lookup for analytics
+            try
+            {
+                var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+                var ua = Request.Headers["User-Agent"].FirstOrDefault();
+                var log = new NipeNikupe.Models.SkillSearchLog
+                {
+                    Skill = userSkills.Count == 0 ? string.Empty : string.Join(",", userSkills),
+                    County = county,
+                    UserId = currentUser.Id.ToString(),
+                    IpAddress = ip,
+                    UserAgent = ua,
+                    ResultsCount = selection?.Count() ?? 0,
+                    SearchTimeUtc = DateTime.UtcNow
+                };
+                _context.SkillSearchLogs.Add(log);
+                await _context.SaveChangesAsync();
+            }
+            catch
+            {
+                // Do not fail the request on logging errors
+            }
+
+            return Ok(new
+            {
+                user = responseUser,
+                similarUsers = selection
+            });
         }
 
         // -------------------------
