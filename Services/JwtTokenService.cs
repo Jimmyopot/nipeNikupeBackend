@@ -40,5 +40,34 @@ namespace NipeNikupe.Services
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
+        /// <summary>
+        /// Generate JWT token specifically for admin users
+        /// </summary>
+        public string GenerateAdminToken(string adminEmail)
+        {
+            var jwtSettings = _config.GetSection("Jwt");
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, adminEmail),
+                new Claim("email", adminEmail),
+                new Claim("role", "Admin"),  // Admin role claim
+                new Claim("isAdmin", "true"), // Additional admin flag
+                new Claim(ClaimTypes.Role, "Admin") // Standard role claim
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: jwtSettings["Issuer"],
+                audience: jwtSettings["Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddHours(8), // Admins get longer session (8 hours)
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 }
