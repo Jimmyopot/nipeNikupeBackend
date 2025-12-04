@@ -147,6 +147,31 @@ namespace NipeNikupe.Controllers
             });
         }
 
+        [HttpGet("ValidateToken")]
+        [Authorize]
+        public IActionResult ValidateToken()
+        {
+            var expClaim = User?.FindFirst("exp")?.Value;
+
+            if (string.IsNullOrWhiteSpace(expClaim) || !long.TryParse(expClaim, out var expUnix))
+            {
+                return Unauthorized(new { isValid = false, message = "Invalid token." });
+            }
+
+            var expDateTime = DateTimeOffset.FromUnixTimeSeconds(expUnix).UtcDateTime;
+            var timeRemaining = expDateTime - DateTime.UtcNow;
+
+            return Ok(new
+            {
+                isValid = true,
+                expiresAt = expDateTime,
+                timeRemainingSeconds = (int)timeRemaining.TotalSeconds,
+                message = timeRemaining.TotalSeconds > 0
+                    ? "Token is valid."
+                    : "Token has expired."
+            });
+        }
+
         [HttpGet("CheckAuthentication")]
         [AllowAnonymous]
         public ActionResult<bool> CheckAuthentication()

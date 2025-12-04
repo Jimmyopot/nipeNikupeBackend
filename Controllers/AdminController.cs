@@ -108,6 +108,32 @@ namespace NipeNikupe.Controllers
             });
         }
 
+        // Add to AdminController.cs
+        [HttpGet("ValidateToken")]
+        [Authorize(Roles = "Admin")]
+        public IActionResult ValidateToken()
+        {
+            var expClaim = User?.FindFirst("exp")?.Value;
+
+            if (string.IsNullOrWhiteSpace(expClaim) || !long.TryParse(expClaim, out var expUnix))
+            {
+                return Unauthorized(new { isValid = false, message = "Invalid admin token." });
+            }
+
+            var expDateTime = DateTimeOffset.FromUnixTimeSeconds(expUnix).UtcDateTime;
+            var timeRemaining = expDateTime - DateTime.UtcNow;
+
+            return Ok(new
+            {
+                isValid = true,
+                expiresAt = expDateTime,
+                timeRemainingSeconds = (int)timeRemaining.TotalSeconds,
+                message = timeRemaining.TotalSeconds > 0
+                    ? "Admin token is valid."
+                    : "Admin token has expired."
+            });
+        }
+
         /// <summary>
         /// Admin logout endpoint (optional - for logging purposes)
         /// POST /api/admin/logout
