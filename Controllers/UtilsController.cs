@@ -1350,7 +1350,8 @@ namespace NipeNikupe.Controllers
                     skill = matchedSkill.Raw,
                     county = user.CityOrTown ?? string.Empty,
                     country = user.Country ?? string.Empty,
-                    contact = user.Email
+                    contact = user.Email,
+                    skills = user.Skills  // Include full skills list
                 });
             }
 
@@ -1488,6 +1489,91 @@ namespace NipeNikupe.Controllers
                 return StatusCode(500, new { message = "An error occurred while fetching search history.", error = ex.Message });
             }
         }
+
+        // -------------------------
+        // NEW ENDPOINT: Get Chat History (All Users Chatted With)
+        // GET /api/utils/GetChatHistory
+        // Returns all unique users the logged-in user has previously exchanged messages with
+        // Requires authentication - reads userId from JWT token claims
+        // -------------------------
+        [Authorize]
+        [HttpGet("GetChatHistory")]
+        public async Task<IActionResult> GetChatHistory()
+        {
+            // Get current user ID from JWT token claims
+            var currentUserIdClaim = GetUserIdFromClaims();
+
+            if (string.IsNullOrWhiteSpace(currentUserIdClaim) || !Guid.TryParse(currentUserIdClaim, out var currentUserId))
+            {
+                _logger.LogWarning("GetChatHistory: Unable to resolve userId from claims");
+                return Unauthorized(new { message = "User authentication required. Please login again." });
+            }
+
+            _logger.LogInformation($"Fetching chat history for userId: {currentUserId}");
+
+            try
+            {
+                // Step 1: Get all unique user IDs the current user has chatted with
+                // This includes both messages sent by the user (ReceiverId) and received by the user (SenderId)
+                var sentMessageReceiverIds = await _context.ChatMessages
+                    .Where(m => m.SenderId == currentUserId)
+                    .Select(m => m.ReceiverId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var receivedMessageSenderIds = await _context.ChatMessages
+                    .Where(m => m.ReceiverId == currentUserId)
+                    .Select(m => m.SenderId)
+                    .Distinct()
+                    .ToListAsync();
+
+                // Combine and deduplicate user IDs
+                var chattedUserIds = sentMessageReceiverIds
+                    .Union(receivedMessageSenderIds)
+                    .Distinct()
+                    .ToList();
+
+                if (chattedUserIds.Count == 0)
+                {
+                    _logger.LogInformation($"No chat history found for userId: {currentUserId}");
+                    return Ok(new List<object>());
+                }
+
+                _logger.LogInformation($"Found {chattedUserIds.Count} unique users in chat history for userId: {currentUserId}");
+
+                // Step 2: Fetch user profile details from SignUps table
+                var chattedUsers = await _context.SignUps
+                    .Where(u => chattedUserIds.Contains(u.Id))
+                    .Select(u => new
+                    {
+                        userId = u.Id.ToString(),
+                        fullName = u.FullName,
+                        skill = (u.Skills != null && u.Skills.Count > 0)
+                            ? u.Skills.FirstOrDefault(s => !string.IsNullOrWhiteSpace(s)) ?? string.Empty
+                            : string.Empty,
+                        county = u.CityOrTown ?? string.Empty,
+                        country = u.Country ?? string.Empty,
+                        contact = u.Email ?? string.Empty,
+                        skills = u.Skills ?? new List<string>()
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation($"✅ Successfully retrieved {chattedUsers.Count} user profiles for chat history");
+
+                return Ok(chattedUsers);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"❌ Failed to fetch chat history for user {currentUserId}");
+                return StatusCode(500, new
+                {
+                    message = "An error occurred while fetching chat history.",
+                    error = ex.Message
+                });
+            }
+        }
+
+
         // Add this helper method inside the UtilsController class to fix CS0103
 
         private string? GetUserIdFromClaims()
