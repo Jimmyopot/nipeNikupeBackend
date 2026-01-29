@@ -21,7 +21,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowViteFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://localhost:5173", "https://nipenikupe.top/", "37.60.243.121", "https://37.60.243.121/")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
