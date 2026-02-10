@@ -16,6 +16,7 @@ namespace NipeNikupe.Data
         public virtual DbSet<ChatMessage> ChatMessages { get; set; }
         public virtual DbSet<SkillExchangeSession> SkillExchangeSessions { get; set; }
         public virtual DbSet<SkillSearchLog> SkillSearchLogs { get; set; }
+        public virtual DbSet<Rating> Ratings { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -27,6 +28,7 @@ namespace NipeNikupe.Data
             builder.Entity<ChatMessage>().ToTable("chat_messages");
             builder.Entity<SkillExchangeSession>().ToTable("skill_exchange_sessions");
             builder.Entity<SkillSearchLog>().ToTable("skill_search_logs");
+            builder.Entity<Rating>().ToTable("ratings");
 
             builder.Entity<County>().HasData(
                new County { Id = 1, Name = "Mombasa" },
