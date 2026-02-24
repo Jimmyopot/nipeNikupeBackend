@@ -17,6 +17,7 @@ namespace NipeNikupe.Data
         public virtual DbSet<SkillExchangeSession> SkillExchangeSessions { get; set; }
         public virtual DbSet<SkillSearchLog> SkillSearchLogs { get; set; }
         public virtual DbSet<Rating> Ratings { get; set; }
+        public virtual DbSet<Notification> Notifications { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -29,6 +30,15 @@ namespace NipeNikupe.Data
             builder.Entity<SkillExchangeSession>().ToTable("skill_exchange_sessions");
             builder.Entity<SkillSearchLog>().ToTable("skill_search_logs");
             builder.Entity<Rating>().ToTable("ratings");
+            builder.Entity<Notification>().ToTable("notifications");
+            // Configure indexes for better query performance
+            builder.Entity<Notification>()
+                .HasIndex(n => n.RecipientId)
+                .HasDatabaseName("IX_Notifications_RecipientId");
+
+            builder.Entity<Notification>()
+                .HasIndex(n => new { n.RecipientId, n.IsRead })
+                .HasDatabaseName("IX_Notifications_RecipientId_IsRead");
 
             builder.Entity<County>().HasData(
                new County { Id = 1, Name = "Mombasa" },

@@ -136,6 +136,7 @@ app.UseAuthorization();
 
 // Map SignalR hubs
 app.MapHub<ChatHub>("/hubs/chat");
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.MapControllers();
 
