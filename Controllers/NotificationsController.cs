@@ -32,7 +32,7 @@ namespace NipeNikupe.Controllers
         /// GET /api/notifications
         /// Supports filtering by isRead status
         /// </summary>
-        [HttpGet]
+        [HttpGet("getNotifications")]
         public async Task<IActionResult> GetNotifications(
             [FromQuery] bool? isRead = null,
             [FromQuery] int limit = 50,
@@ -93,7 +93,7 @@ namespace NipeNikupe.Controllers
         /// Get notifications for a specific user (admin/support use)
         /// GET /api/notifications/{userId}
         /// </summary>
-        [HttpGet("{userId}")]
+        [HttpGet("getNotifications/{userId}")]
         public async Task<IActionResult> GetUserNotifications(
             Guid userId,
             [FromQuery] bool? isRead = null,
