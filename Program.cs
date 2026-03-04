@@ -99,7 +99,8 @@ builder.Services.AddAuthentication(options =>
             // If the request is for our SignalR hub, read the token from the query string
             var path = context.HttpContext.Request.Path;
             if (!string.IsNullOrEmpty(accessToken) &&
-                (path.StartsWithSegments("/hubs/chat")))
+                (path.StartsWithSegments("/hubs/chat") ||
+                 path.StartsWithSegments("/hubs/notifications")))
             {
                 context.Token = accessToken;
             }
